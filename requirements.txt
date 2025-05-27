@@ -1,0 +1,9 @@
+trimesh
+numpy
+scikit-learn
+matplotlib
+open3d # Opcional, para visualização 3D avançada
+
+# Para os notebooks
+jupyterlab
+pandas # Útil para análise de resultados

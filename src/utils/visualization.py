@@ -11,233 +11,425 @@ import os
 try:
     import open3d as o3d
     OPEN3D_AVAILABLE = True
-    logging.info("Biblioteca Open3D encontrada. Visualização 3D interativa estará disponível.")
+    logging.info("Open3D disponível - visualização 3D interativa habilitada")
 except ImportError:
     OPEN3D_AVAILABLE = False
-    logging.warning("Biblioteca Open3D não encontrada. Visualização 3D interativa desabilitada. Usando Matplotlib para projeções 2D.")
+    logging.info("Open3D não disponível - usando apenas visualização 2D")
 
-# Configuração básica de logging
-logging.basicConfig(level=logging.INFO, format=\'%(asctime)s - %(levelname)s - %(message)s\')
-
-def plot_landmarks_2d(mesh, landmarks_dict, title="Landmarks Detectados (Projeção 2D)", save_path=None):
-    """Plota a malha (como nuvem de pontos projetada) e os landmarks usando Matplotlib (projeções XY, XZ, YZ)."""
+def plot_landmarks_2d(mesh, landmarks_dict, title="Landmarks Detectados (2D)", save_path=None):
+    """Plota a malha e landmarks usando projeções 2D (XY, XZ, YZ)."""
     if not isinstance(mesh, trimesh.Trimesh):
-        logging.error("Entrada para plot_landmarks_2d não é um objeto Trimesh válido.")
-        return
+        logging.error("Entrada para plot_landmarks_2d não é um Trimesh válido")
+        return False
 
-    vertices = mesh.vertices
-    landmark_coords = []
-    landmark_names = []
-    if landmarks_dict:
-        for name, coords in landmarks_dict.items():
-            if coords is not None:
-                landmark_coords.append(coords)
-                landmark_names.append(name)
-        landmark_coords = np.array(landmark_coords)
-
-    fig, axs = plt.subplots(1, 3, figsize=(18, 6))
-    fig.suptitle(title, fontsize=16)
-
-    # Projeção XY (Vista Superior/Inferior)
-    axs[0].scatter(vertices[:, 0], vertices[:, 1], s=1, alpha=0.1, label=\"Vértices da Malha\")
-    if len(landmark_coords) > 0:
-        axs[0].scatter(landmark_coords[:, 0], landmark_coords[:, 1], c=\"red\", s=50, label=\"Landmarks\")
-        for i, name in enumerate(landmark_names):
-            axs[0].text(landmark_coords[i, 0], landmark_coords[i, 1], name, fontsize=9, color=\"red\")
-    axs[0].set_xlabel(\"X\")
-    axs[0].set_ylabel(\"Y\")
-    axs[0].set_title(\"Projeção XY (Vista Superior)\")
-    axs[0].set_aspect(\"equal\", adjustable=\"box\")
-    axs[0].grid(True)
-
-    # Projeção XZ (Vista Frontal/Traseira)
-    axs[1].scatter(vertices[:, 0], vertices[:, 2], s=1, alpha=0.1, label=\"Vértices da Malha\")
-    if len(landmark_coords) > 0:
-        axs[1].scatter(landmark_coords[:, 0], landmark_coords[:, 2], c=\"red\", s=50, label=\"Landmarks\")
-        for i, name in enumerate(landmark_names):
-            axs[1].text(landmark_coords[i, 0], landmark_coords[i, 2], name, fontsize=9, color=\"red\")
-    axs[1].set_xlabel(\"X\")
-    axs[1].set_ylabel(\"Z\")
-    axs[1].set_title(\"Projeção XZ (Vista Frontal)\")
-    axs[1].set_aspect(\"equal\", adjustable=\"box\")
-    axs[1].grid(True)
-
-    # Projeção YZ (Vista Lateral)
-    axs[2].scatter(vertices[:, 1], vertices[:, 2], s=1, alpha=0.1, label=\"Vértices da Malha\")
-    if len(landmark_coords) > 0:
-        axs[2].scatter(landmark_coords[:, 1], landmark_coords[:, 2], c=\"red\", s=50, label=\"Landmarks\")
-        for i, name in enumerate(landmark_names):
-            axs[2].text(landmark_coords[i, 1], landmark_coords[i, 2], name, fontsize=9, color=\"red\")
-    axs[2].set_xlabel(\"Y\")
-    axs[2].set_ylabel(\"Z\")
-    axs[2].set_title(\"Projeção YZ (Vista Lateral)\")
-    axs[2].set_aspect(\"equal\", adjustable=\"box\")
-    axs[2].grid(True)
-
-    plt.tight_layout(rect=[0, 0.03, 1, 0.95]) # Ajustar layout para o título principal
-
-    if save_path:
-        try:
-            plt.savefig(save_path, dpi=300)
-            logging.info(f"Visualização 2D salva em: {save_path}")
-        except Exception as e:
-            logging.error(f"Erro ao salvar visualização 2D em {save_path}: {e}")
-    else:
-        # Em ambientes sem GUI, plt.show() pode não funcionar ou bloquear.
-        # É mais seguro salvar a imagem ou usá-la em notebooks.
-        logging.info("Visualização 2D gerada. Use save_path para salvar ou exiba em um notebook.")
-        # plt.show() # Descomentar se em ambiente com GUI
-
-    plt.close(fig) # Fechar a figura para liberar memória
-
-def plot_landmarks_3d_o3d(mesh, landmarks_dict, title="Landmarks Detectados (3D Interativo)"):
-    """Visualiza a malha e os landmarks em 3D usando Open3D (se disponível)."""
-    if not OPEN3D_AVAILABLE:
-        logging.warning("Open3D não está disponível. Não é possível gerar visualização 3D interativa.")
-        return None
-
-    if not isinstance(mesh, trimesh.Trimesh):
-        logging.error("Entrada para plot_landmarks_3d_o3d não é um objeto Trimesh válido.")
-        return None
-
-    # Converter malha Trimesh para Open3D TriangleMesh
-    o3d_mesh = o3d.geometry.TriangleMesh(
-        vertices=o3d.utility.Vector3dVector(mesh.vertices),
-        triangles=o3d.utility.Vector3iVector(mesh.faces)
-    )
-    o3d_mesh.compute_vertex_normals()
-    # Pintar a malha de cinza claro para destacar os landmarks
-    o3d_mesh.paint_uniform_color([0.8, 0.8, 0.8])
-
-    geometries = [o3d_mesh]
-
-    # Criar esferas para representar os landmarks
-    if landmarks_dict:
-        for name, coords in landmarks_dict.items():
-            if coords is not None:
-                landmark_sphere = o3d.geometry.TriangleMesh.create_sphere(radius=2.0) # Ajustar raio conforme escala
-                landmark_sphere.translate(np.array(coords))
-                landmark_sphere.paint_uniform_color([1.0, 0.0, 0.0]) # Vermelho
-                geometries.append(landmark_sphere)
-                # Adicionar texto (pode poluir a visualização, usar com cuidado)
-                # label = o3d.geometry.create_text_geometry(name, font_size=10, depth=1)
-                # label.translate(np.array(coords) + [0, 0, 5]) # Deslocar um pouco
-                # label.paint_uniform_color([0, 0, 0])
-                # geometries.append(label)
-
-    # Visualizar
-    logging.info("Abrindo janela de visualização 3D interativa Open3D...")
     try:
-        # A visualização interativa pode não funcionar em todos os ambientes remotos/notebooks.
-        o3d.visualization.draw_geometries(geometries, window_name=title)
-        logging.info("Janela de visualização 3D fechada.")
-        # Nota: draw_geometries é bloqueante. O código continua após fechar a janela.
-        # Para salvar uma imagem da visualização sem abrir janela, pode-se usar:
-        # vis = o3d.visualization.Visualizer()
-        # vis.create_window(visible=False) # Executar fora da tela
-        # for geom in geometries: vis.add_geometry(geom)
-        # vis.update_geometry()
-        # vis.poll_events()
-        # vis.update_renderer()
-        # vis.capture_screen_image("landmark_visualization.png", do_render=True)
-        # vis.destroy_window()
-        return True # Indica que a visualização foi tentada
+        vertices = mesh.vertices
+        landmark_coords = []
+        landmark_names = []
+        
+        # Extrair coordenadas e nomes dos landmarks válidos
+        if landmarks_dict:
+            for name, coords in landmarks_dict.items():
+                if coords is not None:
+                    try:
+                        coord_array = np.asarray(coords)
+                        if coord_array.shape == (3,) and np.isfinite(coord_array).all():
+                            landmark_coords.append(coord_array)
+                            landmark_names.append(name)
+                    except:
+                        logging.warning(f"Coordenada inválida para landmark {name}: {coords}")
+                        continue
+        
+        landmark_coords = np.array(landmark_coords) if landmark_coords else np.empty((0, 3))
+
+        # Criar subplots
+        fig, axs = plt.subplots(1, 3, figsize=(18, 6))
+        fig.suptitle(title, fontsize=16)
+
+        # Projeção XY (Vista Superior)
+        axs[0].scatter(vertices[:, 0], vertices[:, 1], s=0.5, alpha=0.3, 
+                      c='lightblue', label="Vértices")
+        if len(landmark_coords) > 0:
+            axs[0].scatter(landmark_coords[:, 0], landmark_coords[:, 1], 
+                          c='red', s=80, marker='o', edgecolors='black', 
+                          linewidth=1, label="Landmarks", zorder=5)
+            # Adicionar labels dos landmarks
+            for i, name in enumerate(landmark_names):
+                axs[0].annotate(name, (landmark_coords[i, 0], landmark_coords[i, 1]),
+                               xytext=(5, 5), textcoords='offset points',
+                               fontsize=8, color='darkred',
+                               bbox=dict(boxstyle='round,pad=0.3', facecolor='white', alpha=0.7))
+        
+        axs[0].set_xlabel("X (mm)")
+        axs[0].set_ylabel("Y (mm)")
+        axs[0].set_title("Vista Superior (XY)")
+        axs[0].set_aspect('equal', adjustable='box')
+        axs[0].grid(True, alpha=0.3)
+        axs[0].legend()
+
+        # Projeção XZ (Vista Frontal)
+        axs[1].scatter(vertices[:, 0], vertices[:, 2], s=0.5, alpha=0.3, 
+                      c='lightgreen', label="Vértices")
+        if len(landmark_coords) > 0:
+            axs[1].scatter(landmark_coords[:, 0], landmark_coords[:, 2], 
+                          c='red', s=80, marker='o', edgecolors='black', 
+                          linewidth=1, label="Landmarks", zorder=5)
+            for i, name in enumerate(landmark_names):
+                axs[1].annotate(name, (landmark_coords[i, 0], landmark_coords[i, 2]),
+                               xytext=(5, 5), textcoords='offset points',
+                               fontsize=8, color='darkred',
+                               bbox=dict(boxstyle='round,pad=0.3', facecolor='white', alpha=0.7))
+        
+        axs[1].set_xlabel("X (mm)")
+        axs[1].set_ylabel("Z (mm)")
+        axs[1].set_title("Vista Frontal (XZ)")
+        axs[1].set_aspect('equal', adjustable='box')
+        axs[1].grid(True, alpha=0.3)
+        axs[1].legend()
+
+        # Projeção YZ (Vista Lateral)
+        axs[2].scatter(vertices[:, 1], vertices[:, 2], s=0.5, alpha=0.3, 
+                      c='lightcoral', label="Vértices")
+        if len(landmark_coords) > 0:
+            axs[2].scatter(landmark_coords[:, 1], landmark_coords[:, 2], 
+                          c='red', s=80, marker='o', edgecolors='black', 
+                          linewidth=1, label="Landmarks", zorder=5)
+            for i, name in enumerate(landmark_names):
+                axs[2].annotate(name, (landmark_coords[i, 1], landmark_coords[i, 2]),
+                               xytext=(5, 5), textcoords='offset points',
+                               fontsize=8, color='darkred',
+                               bbox=dict(boxstyle='round,pad=0.3', facecolor='white', alpha=0.7))
+        
+        axs[2].set_xlabel("Y (mm)")
+        axs[2].set_ylabel("Z (mm)")
+        axs[2].set_title("Vista Lateral (YZ)")
+        axs[2].set_aspect('equal', adjustable='box')
+        axs[2].grid(True, alpha=0.3)
+        axs[2].legend()
+
+        plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+
+        # Salvar se caminho fornecido
+        if save_path:
+            try:
+                os.makedirs(os.path.dirname(save_path), exist_ok=True)
+                plt.savefig(save_path, dpi=300, bbox_inches='tight')
+                logging.info(f"Visualização 2D salva em: {save_path}")
+            except Exception as e:
+                logging.error(f"Erro ao salvar visualização 2D: {e}")
+        
+        # Fechar figura para liberar memória
+        plt.close(fig)
+        return True
+
     except Exception as e:
-        logging.error(f"Erro ao tentar exibir visualização 3D com Open3D: {e}")
-        return False # Indica falha na visualização
+        logging.error(f"Erro durante plotagem 2D: {e}")
+        return False
 
-def plot_landmarks(mesh, landmarks_dict, title="Landmarks Detectados", use_3d=True, save_path_2d=None):
-    """Função principal para plotar landmarks. Tenta 3D com Open3D, senão usa projeções 2D com Matplotlib.
+def plot_landmarks_3d_o3d(mesh, landmarks_dict, title="Landmarks 3D", show_window=True):
+    """Visualiza malha e landmarks em 3D usando Open3D."""
+    if not OPEN3D_AVAILABLE:
+        logging.warning("Open3D não disponível - visualização 3D não possível")
+        return False
 
+    if not isinstance(mesh, trimesh.Trimesh):
+        logging.error("Entrada para plot_landmarks_3d_o3d não é um Trimesh válido")
+        return False
+
+    try:
+        # Converter Trimesh para Open3D
+        o3d_mesh = o3d.geometry.TriangleMesh(
+            vertices=o3d.utility.Vector3dVector(mesh.vertices),
+            triangles=o3d.utility.Vector3iVector(mesh.faces)
+        )
+        
+        # Computar normais e pintar a malha
+        o3d_mesh.compute_vertex_normals()
+        o3d_mesh.paint_uniform_color([0.7, 0.7, 0.7])  # Cinza claro
+
+        geometries = [o3d_mesh]
+
+        # Adicionar landmarks como esferas
+        if landmarks_dict:
+            # Calcular tamanho apropriado para landmarks baseado na malha
+            mesh_scale = np.max(mesh.extents)
+            sphere_radius = mesh_scale * 0.02  # 2% do tamanho da malha
+            
+            colors = [
+                [1.0, 0.0, 0.0],  # Vermelho
+                [0.0, 1.0, 0.0],  # Verde
+                [0.0, 0.0, 1.0],  # Azul
+                [1.0, 1.0, 0.0],  # Amarelo
+                [1.0, 0.0, 1.0],  # Magenta
+                [0.0, 1.0, 1.0],  # Ciano
+                [1.0, 0.5, 0.0],  # Laranja
+                [0.5, 0.0, 1.0],  # Roxo
+            ]
+            
+            color_idx = 0
+            for name, coords in landmarks_dict.items():
+                if coords is not None:
+                    try:
+                        coord_array = np.asarray(coords)
+                        if coord_array.shape == (3,) and np.isfinite(coord_array).all():
+                            # Criar esfera para o landmark
+                            sphere = o3d.geometry.TriangleMesh.create_sphere(radius=sphere_radius)
+                            sphere.translate(coord_array)
+                            sphere.paint_uniform_color(colors[color_idx % len(colors)])
+                            geometries.append(sphere)
+                            color_idx += 1
+                    except Exception as e:
+                        logging.warning(f"Erro ao criar esfera para {name}: {e}")
+
+        # Visualizar
+        if show_window:
+            logging.info("Abrindo janela de visualização 3D...")
+            try:
+                # Configurar visualizador
+                vis = o3d.visualization.Visualizer()
+                vis.create_window(window_name=title, width=1024, height=768)
+                
+                for geom in geometries:
+                    vis.add_geometry(geom)
+                
+                # Configurar vista
+                vis.get_render_option().point_size = 1.0
+                vis.get_render_option().line_width = 1.0
+                
+                # Executar visualizador
+                vis.run()
+                vis.destroy_window()
+                
+                logging.info("Janela de visualização 3D fechada")
+                return True
+                
+            except Exception as e:
+                logging.error(f"Erro na visualização 3D: {e}")
+                return False
+        else:
+            # Modo sem janela (para captura de tela)
+            logging.info("Visualização 3D em modo headless")
+            return True
+
+    except Exception as e:
+        logging.error(f"Erro durante criação da visualização 3D: {e}")
+        return False
+
+def save_screenshot_3d(mesh, landmarks_dict, save_path, image_size=(1024, 768)):
+    """Salva screenshot da visualização 3D sem mostrar janela."""
+    if not OPEN3D_AVAILABLE:
+        logging.warning("Open3D não disponível - screenshot 3D não possível")
+        return False
+
+    try:
+        # Converter para Open3D
+        o3d_mesh = o3d.geometry.TriangleMesh(
+            vertices=o3d.utility.Vector3dVector(mesh.vertices),
+            triangles=o3d.utility.Vector3iVector(mesh.faces)
+        )
+        o3d_mesh.compute_vertex_normals()
+        o3d_mesh.paint_uniform_color([0.7, 0.7, 0.7])
+
+        geometries = [o3d_mesh]
+
+        # Adicionar landmarks
+        if landmarks_dict:
+            mesh_scale = np.max(mesh.extents)
+            sphere_radius = mesh_scale * 0.02
+            
+            for name, coords in landmarks_dict.items():
+                if coords is not None:
+                    try:
+                        coord_array = np.asarray(coords)
+                        if coord_array.shape == (3,) and np.isfinite(coord_array).all():
+                            sphere = o3d.geometry.TriangleMesh.create_sphere(radius=sphere_radius)
+                            sphere.translate(coord_array)
+                            sphere.paint_uniform_color([1.0, 0.0, 0.0])
+                            geometries.append(sphere)
+                    except:
+                        continue
+
+        # Criar visualizador off-screen
+        vis = o3d.visualization.Visualizer()
+        vis.create_window(visible=False, width=image_size[0], height=image_size[1])
+        
+        for geom in geometries:
+            vis.add_geometry(geom)
+        
+        # Renderizar e salvar
+        vis.poll_events()
+        vis.update_renderer()
+        
+        os.makedirs(os.path.dirname(save_path), exist_ok=True)
+        vis.capture_screen_image(save_path, do_render=True)
+        vis.destroy_window()
+        
+        logging.info(f"Screenshot 3D salvo em: {save_path}")
+        return True
+
+    except Exception as e:
+        logging.error(f"Erro ao salvar screenshot 3D: {e}")
+        return False
+
+def plot_landmarks(mesh, landmarks_dict, title="Landmarks Detectados", 
+                  use_3d=True, save_path_2d=None, save_path_3d=None):
+    """Função principal para plotar landmarks.
+    
     Args:
-        mesh (trimesh.Trimesh): Malha a ser visualizada.
-        landmarks_dict (dict): Dicionário de landmarks {"Nome": [x,y,z] or None, ...}.
-        title (str): Título para a visualização.
-        use_3d (bool): Se deve tentar a visualização 3D interativa primeiro.
-        save_path_2d (str, optional): Caminho para salvar a imagem da visualização 2D.
-                                      Se None, a imagem não é salva automaticamente.
+        mesh: Malha 3D
+        landmarks_dict: Dicionário de landmarks
+        title: Título da visualização
+        use_3d: Se deve tentar visualização 3D
+        save_path_2d: Caminho para salvar imagem 2D
+        save_path_3d: Caminho para salvar screenshot 3D
     """
-    visualization_done = False
+    if not isinstance(mesh, trimesh.Trimesh):
+        logging.error("Malha fornecida não é um Trimesh válido")
+        return False
+
+    visualization_success = False
+
+    # Tentar visualização 3D se solicitado e disponível
     if use_3d and OPEN3D_AVAILABLE:
-        logging.info("Tentando visualização 3D interativa com Open3D...")
+        logging.info("Tentando visualização 3D interativa...")
         success_3d = plot_landmarks_3d_o3d(mesh, landmarks_dict, title=f"{title} (3D)")
         if success_3d:
-            visualization_done = True
+            visualization_success = True
+        
+        # Salvar screenshot 3D se caminho fornecido
+        if save_path_3d:
+            save_screenshot_3d(mesh, landmarks_dict, save_path_3d)
 
-    if not visualization_done:
-        if use_3d and not OPEN3D_AVAILABLE:
-            logging.info("Open3D não disponível. Recorrendo à visualização 2D com Matplotlib.")
+    # Sempre gerar visualização 2D (como fallback ou complemento)
+    if not use_3d or not OPEN3D_AVAILABLE:
+        if not OPEN3D_AVAILABLE:
+            logging.info("Open3D não disponível - usando visualização 2D")
         else:
-            logging.info("Visualização 3D não foi usada ou falhou. Gerando visualização 2D com Matplotlib.")
+            logging.info("Gerando visualização 2D")
 
-        plot_landmarks_2d(mesh, landmarks_dict, title=f"{title} (Projeções 2D)", save_path=save_path_2d)
-        visualization_done = True # Mesmo que salve ou não, a tentativa 2D foi feita
+    success_2d = plot_landmarks_2d(mesh, landmarks_dict, 
+                                  title=f"{title} (2D)", 
+                                  save_path=save_path_2d)
+    if success_2d:
+        visualization_success = True
 
-    if not visualization_done:
-         logging.error("Nenhum método de visualização pôde ser executado com sucesso.")
+    if not visualization_success:
+        logging.error("Falha em todos os métodos de visualização")
+        return False
 
-# Exemplo de uso (requer mesh_processor e um arquivo STL dummy)
-if __name__ == \"__main__\":
-    from ..core.mesh_processor import MeshProcessor # Import relativo
-    from ..core.detector_geometric import GeometricDetector # Para obter landmarks dummy
+    return True
 
-    logging.info("--- Testando Funções de Visualização ---")
+def plot_error_distribution(errors_dict, title="Distribuição de Erros", save_path=None):
+    """Plota distribuição de erros de detecção para cada landmark.
+    
+    Args:
+        errors_dict: Dicionário {landmark_name: [list of errors]}
+        title: Título do gráfico
+        save_path: Caminho para salvar
+    """
+    try:
+        # Filtrar landmarks com dados válidos
+        valid_data = {name: errors for name, errors in errors_dict.items() 
+                     if errors and len(errors) > 0}
+        
+        if not valid_data:
+            logging.warning("Nenhum dado de erro válido para plotar")
+            return False
 
-    # Criar diretórios e um arquivo STL dummy se não existirem para teste
-    if not os.path.exists("data/skulls"): os.makedirs("data/skulls")
-    dummy_stl_path = "data/skulls/dummy_vis_skull.stl"
-    if not os.path.exists(dummy_stl_path):
-        logging.info(f"Criando arquivo STL dummy em {dummy_stl_path}")
-        mesh_dummy = trimesh.primitives.Sphere(radius=50, subdivisions=4)
-        mesh_dummy.vertices += [0, 0, 50]
-        mesh_dummy.export(dummy_stl_path)
+        # Criar boxplot
+        fig, ax = plt.subplots(figsize=(12, 6))
+        
+        landmarks = list(valid_data.keys())
+        errors_lists = [valid_data[landmark] for landmark in landmarks]
+        
+        bp = ax.boxplot(errors_lists, labels=landmarks, patch_artist=True)
+        
+        # Colorir boxes
+        colors = plt.cm.Set3(np.linspace(0, 1, len(landmarks)))
+        for patch, color in zip(bp['boxes'], colors):
+            patch.set_facecolor(color)
+        
+        ax.set_title(title, fontsize=14)
+        ax.set_ylabel("Erro de Detecção (mm)")
+        ax.set_xlabel("Landmarks")
+        ax.grid(True, alpha=0.3)
+        
+        # Rotacionar labels se necessário
+        if len(landmarks) > 5:
+            plt.xticks(rotation=45, ha='right')
+        
+        plt.tight_layout()
+        
+        if save_path:
+            os.makedirs(os.path.dirname(save_path), exist_ok=True)
+            plt.savefig(save_path, dpi=300, bbox_inches='tight')
+            logging.info(f"Gráfico de distribuição salvo em: {save_path}")
+        
+        plt.close()
+        return True
+        
+    except Exception as e:
+        logging.error(f"Erro ao plotar distribuição de erros: {e}")
+        return False
 
-    # Carregar a malha
-    processor = MeshProcessor(data_dir="./data/skulls", cache_dir="./data/cache")
-    skull_mesh = processor.load_skull("dummy_vis_skull.stl")
+# Exemplo de uso e teste
+if __name__ == "__main__":
+    import sys
+    import os
+    
+    # Adicionar path para imports
+    sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    
+    # Configurar logging
+    logging.basicConfig(level=logging.INFO, 
+                       format='%(asctime)s - %(levelname)s - %(message)s')
+    
+    logging.info("=== Testando Visualização ===")
 
-    if skull_mesh:
-        # Obter alguns landmarks dummy (usando o detector geométrico como exemplo)
-        detector = GeometricDetector()
-        # Simplificar um pouco para o detector
-        simplified_mesh = processor.simplify(skull_mesh, target_faces=1000, original_filename="dummy_vis_skull.stl")
-        if simplified_mesh:
-            detected_landmarks = detector.detect(simplified_mesh)
-        else:
-            logging.warning("Falha ao simplificar, usando malha original para landmarks dummy.")
-            # Criar landmarks dummy manualmente se a detecção falhar
-            detected_landmarks = {
-                "Glabela": skull_mesh.vertices[np.argmax(skull_mesh.vertices[:,1])].tolist(),
-                "Bregma": skull_mesh.vertices[np.argmax(skull_mesh.vertices[:,2])].tolist(),
-                "Euryon_Direito": skull_mesh.vertices[np.argmax(skull_mesh.vertices[:,0])].tolist(),
-                "Ponto_Faltando": None
-            }
+    # Criar malha de teste
+    test_mesh = trimesh.primitives.Sphere(radius=50, subdivisions=3)
+    test_mesh.vertices += [0, 0, 50]
 
-        if detected_landmarks:
-            print("\nLandmarks Dummy para Visualização:")
-            print(detected_landmarks)
+    # Landmarks de teste
+    test_landmarks = {
+        "Glabela": [0, 50, 50],
+        "Bregma": [0, 0, 100],
+        "Euryon_Direito": [50, 0, 50],
+        "Landmark_Faltando": None
+    }
 
-            # Testar visualização principal (tentará 3D primeiro)
-            print("\n--- Testando plot_landmarks (tentativa 3D primeiro) ---")
-            # Definir um caminho para salvar a imagem 2D caso 3D falhe ou não seja usado
-            save_2d_path = "./dummy_visualization_2d.png"
-            plot_landmarks(skull_mesh, detected_landmarks, title="Teste Visualização Esfera", save_path_2d=save_2d_path)
+    print(f"Malha de teste: {len(test_mesh.vertices)} vértices, {len(test_mesh.faces)} faces")
+    print(f"Landmarks de teste: {len([x for x in test_landmarks.values() if x is not None])} válidos")
 
-            # Forçar visualização 2D
-            print("\n--- Testando plot_landmarks (forçando 2D) ---")
-            plot_landmarks(skull_mesh, detected_landmarks, title="Teste Visualização Esfera (Forçado 2D)", use_3d=False, save_path_2d=save_2d_path)
+    # Testar visualização 2D
+    print("\n--- Teste Visualização 2D ---")
+    success_2d = plot_landmarks_2d(test_mesh, test_landmarks, 
+                                  title="Teste Landmarks 2D",
+                                  save_path="./test_visualization_2d.png")
+    print(f"Visualização 2D: {'Sucesso' if success_2d else 'Falha'}")
 
-            # Verificar se o arquivo 2D foi criado (se a visualização 2D foi chamada)
-            if os.path.exists(save_2d_path):
-                print(f"\nArquivo de visualização 2D salvo em: {save_2d_path}")
-                # Poderia usar image_view aqui para mostrar a imagem salva
-                # image_view(save_2d_path)
-            else:
-                # Isso pode acontecer se a visualização 3D funcionou e foi fechada
-                print("\nArquivo de visualização 2D não foi criado (provavelmente a visualização 3D funcionou). ")
+    # Testar visualização principal
+    print("\n--- Teste Visualização Principal ---")
+    success_main = plot_landmarks(test_mesh, test_landmarks,
+                                 title="Teste Visualização Completa",
+                                 save_path_2d="./test_complete_2d.png")
+    print(f"Visualização principal: {'Sucesso' if success_main else 'Falha'}")
 
-        else:
-            logging.error("Falha ao obter landmarks dummy para visualização.")
+    # Testar gráfico de distribuição de erros
+    print("\n--- Teste Distribuição de Erros ---")
+    test_errors = {
+        "Glabela": [1.2, 2.1, 0.8, 1.5, 2.0],
+        "Nasion": [0.5, 1.0, 1.2, 0.8],
+        "Bregma": [2.5, 3.0, 1.8, 2.2, 1.9, 2.1]
+    }
+    
+    success_error = plot_error_distribution(test_errors,
+                                           title="Teste Distribuição de Erros",
+                                           save_path="./test_error_distribution.png")
+    print(f"Gráfico de erros: {'Sucesso' if success_error else 'Falha'}")
+
+    print(f"\nOpen3D disponível: {OPEN3D_AVAILABLE}")
+    if OPEN3D_AVAILABLE:
+        print("Visualização 3D interativa disponível")
     else:
-        logging.error("Falha ao carregar a malha dummy para visualização.")
-
+        print("Apenas visualização 2D disponível")

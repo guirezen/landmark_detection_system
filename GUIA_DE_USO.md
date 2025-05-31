@@ -1,260 +1,380 @@
-# Guia de Uso - Sistema Simplificado de Detecção de Landmarks
+# Guia de Uso - Sistema de Detecção de Landmarks em Crânios 3D
 
-Este guia fornece instruções sobre como instalar, configurar e utilizar o Sistema Simplificado de Detecção de Landmarks em Crânios 3D.
+Este guia fornece instruções completas sobre como instalar, configurar e utilizar o Sistema de Detecção de Landmarks em Crânios 3D.
 
-## 1. Instalação Rápida
+## 📋 Índice
 
-Siga estes passos para configurar o ambiente e instalar as dependências necessárias.
+1. [Instalação Rápida](#instalação-rápida)
+2. [Estrutura de Diretórios](#estrutura-de-diretórios)
+3. [Uso via Linha de Comando](#uso-via-linha-de-comando)
+4. [Uso com Notebooks Jupyter](#uso-com-notebooks-jupyter)
+5. [Entendendo os Resultados](#entendendo-os-resultados)
+6. [Treinamento de Modelos ML](#treinamento-de-modelos-ml)
+7. [Problemas Comuns](#problemas-comuns)
+8. [Exemplos Práticos](#exemplos-práticos)
+
+## 🚀 Instalação Rápida
 
 ### Pré-requisitos
 
-*   **Python:** Versão 3.8 ou superior recomendada.
-*   **pip:** Gerenciador de pacotes Python.
-*   **Git:** (Opcional) Para clonar o repositório, se aplicável.
+- **Python:** Versão 3.8 ou superior
+- **pip:** Gerenciador de pacotes Python
+- **Git:** (Opcional) Para clonar o repositório
 
 ### Passos de Instalação
 
-1.  **Obtenha o Código:**
-    *   Se você recebeu o projeto como um arquivo `.zip`, descompacte-o em um local de sua preferência.
-    *   Se estiver usando Git: `git clone <url_do_repositorio>`
-    *   Navegue até o diretório raiz do projeto (`landmark_detection_system`) no seu terminal.
+1. **Obter o Código:**
+   ```bash
+   # Se você recebeu como arquivo .zip
+   unzip landmark_detection_system.zip
+   cd landmark_detection_system
+   
+   # Ou se estiver usando Git
+   git clone <url_do_repositorio>
+   cd landmark_detection_system
+   ```
 
-2.  **Crie um Ambiente Virtual (Recomendado):**
-    ```bash
-    python -m venv venv
-    ```
-    *   Ative o ambiente virtual:
-        *   **Windows:** `.\venv\Scripts\activate`
-        *   **macOS/Linux:** `source venv/bin/activate`
+2. **Criar Ambiente Virtual (Recomendado):**
+   ```bash
+   python -m venv venv
+   ```
+   
+   **Ativar o ambiente virtual:**
+   - **Windows:** `.\venv\Scripts\activate`
+   - **macOS/Linux:** `source venv/bin/activate`
 
-3.  **Instale as Dependências:**
-    Execute o seguinte comando no diretório raiz do projeto (onde `requirements.txt` está localizado):
-    ```bash
-    pip install -r requirements.txt
-    ```
-    Isso instalará `trimesh`, `numpy`, `scikit-learn`, `matplotlib`, `open3d` (opcional), `jupyterlab`, `pandas`, `joblib` e outras dependências necessárias.
+3. **Instalar Dependências:**
+   ```bash
+   pip install -r requirements.txt
+   ```
+   
+   Isso instalará todas as dependências necessárias:
+   - `trimesh` - Processamento de malhas 3D
+   - `numpy` - Computação numérica
+   - `scikit-learn` - Machine Learning
+   - `matplotlib` - Visualização 2D
+   - `open3d` - Visualização 3D (opcional)
+   - `pandas` - Análise de dados
+   - `scipy` - Computação científica
+   - `seaborn` - Visualização estatística
 
-4.  **Verificação da Instalação (Opcional):**
-    Você pode tentar importar as bibliotecas principais em um interpretador Python dentro do ambiente ativado para verificar se a instalação ocorreu sem erros:
-    ```python
-    import trimesh
-    import sklearn
-    import open3d # Se instalado
-    print("Dependências principais carregadas com sucesso!")
-    ```
+4. **Verificar Instalação:**
+   ```bash
+   python -c "import trimesh, sklearn, numpy; print('✅ Dependências principais instaladas!')"
+   ```
 
-## 2. Estrutura de Diretórios Esperada
+## 📁 Estrutura de Diretórios
 
-Certifique-se de que os diretórios de dados estejam configurados corretamente. A estrutura padrão é:
+Certifique-se de que os diretórios estejam organizados corretamente:
 
 ```
 landmark_detection_system/
 ├── data/
-│   ├── skulls/          # COLOQUE SEUS ARQUIVOS .STL AQUI!
-│   ├── cache/           # Será criado automaticamente
-│   └── ground_truth/    # (Opcional) Coloque seus arquivos GT .json aqui
-├── models/              # Modelos ML treinados (serão criados/usados)
-├── notebooks/           # Notebooks para exploração e análise
-├── results/             # Resultados das detecções (serão criados)
-├── src/                 # Código fonte
-├── venv/                # Ambiente virtual (se criado)
+│   ├── skulls/          # 📂 COLOQUE SEUS ARQUIVOS .STL AQUI!
+│   ├── cache/           # 🔄 Cache automático (criado automaticamente)
+│   └── ground_truth/    # 📊 Arquivos GT .json (opcional)
+├── models/              # 🤖 Modelos ML treinados
+├── notebooks/           # 📓 Notebooks Jupyter para exploração
+├── results/             # 📈 Resultados das detecções
+├── src/                 # 💾 Código fonte
+│   ├── core/           # Módulos principais
+│   └── utils/          # Utilitários
+├── venv/               # 🐍 Ambiente virtual (se criado)
 ├── requirements.txt
 ├── README.md
 └── GUIA_DE_USO.md
 ```
 
-*   **`data/skulls/`:** É **essencial** que você coloque seus arquivos `.stl` dos modelos de crânio neste diretório para que o sistema possa encontrá-los.
-*   **`data/ground_truth/`:** Se você possui dados ground truth (coordenadas corretas dos landmarks) para avaliação, coloque-os como arquivos `.json` neste diretório. O nome do arquivo GT deve corresponder ao arquivo STL (ex: `A0001.stl` -> `A0001_landmarks_gt.json`).
+**⚠️ IMPORTANTE:** Coloque seus arquivos `.stl` no diretório `data/skulls/` para que o sistema possa encontrá-los.
 
-## 3. Uso Básico (Linha de Comando)
+## 💻 Uso via Linha de Comando
 
-O script principal `src/main.py` oferece uma interface de linha de comando para executar as detecções.
+O script principal `src/main.py` oferece uma interface completa de linha de comando.
 
 **Certifique-se de que seu ambiente virtual esteja ativado antes de executar os comandos.**
 
-### 3.1 Processando um Único Arquivo
+### Processando um Único Arquivo
 
-Use o modo `single` para processar um arquivo STL específico.
-
-**Exemplo (Método Geométrico):**
 ```bash
-python src/main.py single --method geometric -i data/skulls/SEU_ARQUIVO.stl --visualize
+# Método geométrico básico
+python src/main.py single --method geometric -i data/skulls/seu_arquivo.stl --visualize
+
+# Método ML com ground truth
+python src/main.py single --method ml -i data/skulls/seu_arquivo.stl --gt_file data/ground_truth/seu_arquivo_landmarks_gt.json --visualize
+
+# Com simplificação customizada
+python src/main.py single --method geometric -i seu_arquivo.stl --simplify_faces 3000 --verbose
 ```
 
-**Exemplo (Método ML):**
+### Processando Múltiplos Arquivos (Lote)
+
 ```bash
-python src/main.py single --method ml -i data/skulls/SEU_ARQUIVO.stl --visualize
+# Processar todos os STL com método geométrico
+python src/main.py batch --method geometric -i data/skulls/ --output_dir results/geometric_batch --visualize
+
+# Processar com ML e avaliação automática
+python src/main.py batch --method ml -i data/skulls/ --gt_dir data/ground_truth/ --output_dir results/ml_batch
+
+# Processamento silencioso (sem visualizações)
+python src/main.py batch --method geometric -i data/skulls/ --simplify_faces 2000
 ```
 
-**Argumentos Comuns:**
+### Argumentos Principais
 
-*   `--method {geometric, ml}`: (Obrigatório) Escolhe o método de detecção.
-*   `-i / --input_file`: (Obrigatório) Caminho para o arquivo `.stl` de entrada.
-*   `--output_dir`: Diretório para salvar os resultados (padrão: `./results`).
-*   `--cache_dir`: Diretório de cache (padrão: `./data/cache`).
-*   `--no_cache`: Desativa o uso do cache.
-*   `--simplify_faces N`: Simplifica a malha para `N` faces antes da detecção (padrão: 5000). Use 0 para não simplificar.
-*   `--visualize`: Gera e tenta exibir/salvar uma visualização dos landmarks detectados.
-*   `--force_2d_vis`: Força a visualização 2D (matplotlib) mesmo se Open3D estiver disponível.
-*   `--model_dir`: Diretório dos modelos ML (padrão: `./models`, relevante para `--method ml`).
-*   `--gt_file`: (Opcional) Caminho para o arquivo JSON de ground truth para avaliação deste arquivo.
-*   `-v / --verbose`: Ativa logging mais detalhado.
+| Argumento | Descrição | Exemplo |
+|-----------|-----------|---------|
+| `--method` | Método de detecção (`geometric` ou `ml`) | `--method geometric` |
+| `-i` | Arquivo ou diretório de entrada | `-i data/skulls/cranio.stl` |
+| `--output_dir` | Diretório de saída | `--output_dir results/teste` |
+| `--simplify_faces` | Número de faces alvo (0 = não simplificar) | `--simplify_faces 2000` |
+| `--visualize` | Gerar visualizações | `--visualize` |
+| `--gt_file` / `--gt_dir` | Ground truth para avaliação | `--gt_dir data/ground_truth/` |
+| `--no_cache` | Desativar cache | `--no_cache` |
+| `--verbose` | Logging detalhado | `--verbose` |
 
-### 3.2 Processando Múltiplos Arquivos (Lote)
+## 📔 Uso com Notebooks Jupyter
 
-Use o modo `batch` para processar todos os arquivos `.stl` dentro de um diretório.
+Os notebooks oferecem uma experiência interativa para exploração e análise.
 
-**Exemplo (Método Geométrico):**
+### Iniciando o Jupyter Lab
+
 ```bash
-python src/main.py batch --method geometric -i data/skulls/ --output_dir results/geometric_batch
+# No diretório raiz do projeto (com ambiente virtual ativado)
+jupyter lab
 ```
 
-**Exemplo (Método ML com Avaliação):**
-```bash
-python src/main.py batch --method ml -i data/skulls/ --gt_dir data/ground_truth/ --output_dir results/ml_batch --visualize
-```
+Isso abrirá o Jupyter Lab no seu navegador.
 
-**Argumentos Específicos do Batch:**
+### Notebooks Disponíveis
 
-*   `-i / --input_dir`: (Obrigatório) Diretório contendo os arquivos `.stl` a serem processados.
-*   `--gt_dir`: (Opcional) Diretório contendo os arquivos JSON de ground truth para avaliação em lote.
-*   `--output_dir`: Diretório base onde os resultados serão salvos (será criado um subdiretório para o método, ex: `results/ml_batch/ml/`).
+1. **`01_exploracao_dados.ipynb`**
+   - Carregamento e visualização de malhas
+   - Demonstração do pré-processamento
+   - Análise de propriedades geométricas
+   - Verificação do sistema de cache
 
-Os resultados (arquivos JSON de landmarks, visualizações PNG se `--visualize`, e CSVs de avaliação se `--gt_dir`) serão salvos no diretório de saída especificado.
+2. **`02_demonstracao_metodos.ipynb`**
+   - Execução dos métodos de detecção
+   - Comparação visual dos resultados
+   - Análise de performance básica
 
-## 4. Uso com Notebooks Jupyter
+3. **`03_analise_resultados.ipynb`**
+   - Avaliação quantitativa detalhada
+   - Métricas estatísticas
+   - Visualizações comparativas
+   - Relatórios de performance
 
-Os notebooks na pasta `notebooks/` fornecem uma maneira interativa de explorar os dados, demonstrar os métodos e analisar os resultados.
+### Executando os Notebooks
 
-1.  **Inicie o Jupyter Lab:**
-    No diretório raiz do projeto (com o ambiente virtual ativado):
-    ```bash
-    jupyter lab
-    ```
-    Isso abrirá o Jupyter Lab no seu navegador.
+1. Navegue até a pasta `notebooks/` na interface do Jupyter
+2. Abra os notebooks na ordem (01 → 02 → 03)
+3. Execute as células sequencialmente (`Shift + Enter`)
+4. Adapte os caminhos de arquivos conforme necessário
 
-2.  **Navegue e Execute:**
-    *   Abra a pasta `notebooks` na interface do Jupyter.
-    *   Execute os notebooks na ordem:
-        *   `01_exploracao_dados.ipynb`: Carrega, visualiza e simplifica malhas.
-        *   `02_demonstracao_metodos.ipynb`: Executa ambos os métodos de detecção em um exemplo.
-        *   `03_analise_resultados.ipynb`: Avalia e compara os resultados (requer dados GT e resultados gerados previamente).
-    *   Siga as instruções dentro de cada notebook e execute as células de código.
+## 📊 Entendendo os Resultados
 
-**Importante:** Os notebooks contêm código para criar arquivos e dados *dummy* caso os dados reais (STL, GT, modelos ML) não estejam presentes. Adapte os caminhos e nomes de arquivos conforme necessário se estiver usando seus próprios dados.
+### Arquivos de Landmarks (`.json`)
 
-## 5. Entendendo os Resultados
+Para cada arquivo STL processado, o sistema gera um arquivo JSON:
 
-### 5.1 Arquivos de Landmarks (`.json`)
-
-Para cada arquivo STL processado, o sistema gera um arquivo JSON (ex: `SEU_ARQUIVO_geometric_landmarks.json`) no diretório de resultados. Este arquivo contém um dicionário onde as chaves são os nomes dos landmarks (definidos em `src/core/landmarks.py`) e os valores são as coordenadas [x, y, z] detectadas ou `null` (`None` em Python) se a detecção falhou para aquele landmark.
-
-**Exemplo de Conteúdo JSON:**
 ```json
 {
     "Glabela": [10.5, 80.2, 120.1],
     "Nasion": [10.2, 75.0, 110.5],
-    "Bregma": null, // Detecção falhou ou não implementada
+    "Bregma": null,
     "Opisthocranion": [11.0, -90.5, 95.3],
-    ...
+    "Euryon_Esquerdo": [-45.2, 0.1, 85.7],
+    "Euryon_Direito": [45.8, -0.3, 85.9],
+    "Vertex": [0.2, 1.5, 125.3],
+    "Inion": [0.5, -85.2, 75.1]
 }
 ```
 
-### 5.2 Arquivos de Avaliação (`.csv`)
+- **Coordenadas válidas:** Array `[x, y, z]` em milímetros
+- **`null`:** Landmark não detectado ou detecção falhou
 
-Se a avaliação foi executada (usando `--gt_file` ou `--gt_dir`), dois arquivos CSV são gerados no diretório de saída principal:
+### Arquivos de Avaliação (`.csv`)
 
-*   `evaluation_<method>_detailed.csv`: Contém o erro de detecção (distância em mm) para cada landmark em cada arquivo processado.
-*   `evaluation_<method>_summary.csv`: Contém estatísticas agregadas por landmark (erro médio, desvio padrão, taxa de detecção) para o método avaliado.
+Se a avaliação foi executada, dois arquivos CSV são gerados:
 
-### 5.3 Visualizações (`.png`)
+1. **`evaluation_[método]_detailed.csv`**
+   - Erro de detecção para cada landmark em cada arquivo
+   - Colunas: `FileID`, `Method`, `Landmark`, `Error`, `MDE_File`
 
-Se a opção `--visualize` foi usada, imagens `.png` podem ser geradas:
+2. **`evaluation_[método]_summary.csv`**
+   - Estatísticas agregadas por landmark
+   - Colunas: `Landmark`, `MeanError`, `StdError`, `DetectionRate`, `NumDetected`
 
-*   **Visualização 2D:** Se Open3D não estiver disponível ou `--force_2d_vis` for usado, uma imagem com projeções 2D (XY, XZ, YZ) da malha e dos landmarks será salva.
-*   **Visualização 3D:** Se Open3D estiver disponível, uma janela interativa será aberta. A funcionalidade de salvar a imagem 3D diretamente não está habilitada por padrão no script `main.py` ou nos notebooks, mas pode ser implementada modificando `src/utils/visualization.py`.
+### Visualizações (`.png`)
 
-## 6. Aspectos Técnicos (Foco TCC)
+- **Visualização 2D:** Projeções XY, XZ, YZ da malha com landmarks
+- **Visualização 3D:** Janela interativa (se Open3D disponível)
 
-Consulte o `README.md` para uma descrição detalhada dos aspectos técnicos, algoritmos, estruturas de dados e decisões de implementação relevantes para o TCC.
+## 🤖 Treinamento de Modelos ML
 
-## 7. Treinamento do Modelo de Machine Learning
+O script `main.py` **não** realiza treinamento - apenas usa modelos existentes.
 
-O script `main.py` **não** realiza o treinamento dos modelos de Machine Learning. Ele assume que os modelos já existem no diretório especificado por `--model_dir` (padrão: `./models`).
+### Para Treinar Modelos
 
-Para treinar os modelos:
+1. **Prepare os Dados:**
+   - Malhas STL em `data/skulls/`
+   - Arquivos JSON GT correspondentes em `data/ground_truth/`
 
-1.  **Prepare os Dados:** Você precisará de um conjunto de malhas STL (`data/skulls/`) e os arquivos JSON de ground truth correspondentes (`data/ground_truth/`).
-2.  **Use o Código de Treinamento:** O módulo `src/core/detector_ml.py` contém a função `train()`. Você pode:
-    *   Adaptar o código de exemplo no final de `detector_ml.py` para carregar suas malhas e GTs e chamar `train()` para cada landmark.
-    *   Criar um script de treinamento separado que importe `MLDetector` e `MeshProcessor`, carregue os dados e execute o loop de treinamento, salvando os modelos no diretório `models/`.
+2. **Execute o Treinamento:**
 
-**Exemplo Conceitual (em um script `train_ml.py`):**
 ```python
-import os
+# Exemplo de script de treinamento
 import sys
-module_path = os.path.abspath(os.path.join(".")) # Assumindo que roda da raiz
-if module_path not in sys.path: sys.path.append(module_path)
+sys.path.append('.')
 
 from src.core.mesh_processor import MeshProcessor
 from src.core.detector_ml import MLDetector
 from src.utils.helpers import list_stl_files, load_landmarks_from_json
 from src.core.landmarks import LANDMARK_NAMES
-import logging
 
-logging.basicConfig(level=logging.INFO)
-
+# Configuração
 DATA_DIR = "./data/skulls"
 GT_DIR = "./data/ground_truth"
 MODEL_DIR = "./models"
 CACHE_DIR = "./data/cache"
-SIMPLIFY_FACES = 5000
 
+# Carregar dados
 processor = MeshProcessor(data_dir=DATA_DIR, cache_dir=CACHE_DIR)
 ml_detector = MLDetector(model_dir=MODEL_DIR)
 
 all_meshes = []
 all_gts = []
-file_ids = [os.path.splitext(f)[0] for f in list_stl_files(DATA_DIR)]
 
-logging.info(f"Carregando {len(file_ids)} malhas e GTs para treinamento...")
-for file_id in file_ids:
-    mesh = processor.load_skull(f"{file_id}.stl")
-    if not mesh: continue
-    simplified_mesh = processor.simplify(mesh, SIMPLIFY_FACES, original_filename=f"{file_id}.stl")
-    if not simplified_mesh: simplified_mesh = mesh # Usar original se falhar
+stl_files = list_stl_files(DATA_DIR)
+for filename in stl_files:
+    file_id = filename.replace('.stl', '')
+    
+    # Carregar malha
+    mesh = processor.load_skull(filename)
+    if mesh:
+        simplified_mesh = processor.simplify(mesh, target_faces=5000, original_filename=filename)
+        
+        # Carregar GT
+        gt_path = f"{GT_DIR}/{file_id}_landmarks_gt.json"
+        gt_landmarks = load_landmarks_from_json(gt_path)
+        
+        if simplified_mesh and gt_landmarks:
+            all_meshes.append(simplified_mesh)
+            all_gts.append(gt_landmarks)
 
-    gt_path = os.path.join(GT_DIR, f"{file_id}_landmarks_gt.json")
-    gt_landmarks = load_landmarks_from_json(gt_path)
-
-    if simplified_mesh and gt_landmarks:
-        all_meshes.append(simplified_mesh)
-        all_gts.append(gt_landmarks)
+# Treinar para cada landmark
+for landmark_name in LANDMARK_NAMES:
+    print(f"Treinando {landmark_name}...")
+    success = ml_detector.train(all_meshes, all_gts, landmark_name)
+    if success:
+        print(f"✅ Modelo {landmark_name} treinado")
     else:
-        logging.warning(f"Pulando {file_id} por falta de malha ou GT.")
-
-if not all_meshes:
-    logging.error("Nenhum dado válido carregado para treinamento.")
-else:
-    logging.info(f"Iniciando treinamento para {len(LANDMARK_NAMES)} landmarks...")
-    for landmark_name in LANDMARK_NAMES:
-        logging.info(f"--- Treinando para: {landmark_name} ---")
-        ml_detector.train(all_meshes, all_gts, landmark_name)
-    logging.info("Treinamento ML concluído.")
+        print(f"❌ Falha no treinamento de {landmark_name}")
 ```
 
-## 8. Problemas Comuns
+## 🔧 Problemas Comuns
 
-*   **Erro `FileNotFoundError`:** Verifique se os caminhos para os arquivos STL, GT ou modelos estão corretos e se os arquivos existem.
-*   **Memória Insuficiente:** Se encontrar erros de memória, especialmente com malhas grandes:
-    *   Aumente o nível de simplificação (reduza `--simplify_faces`).
-    *   Processe arquivos em lote menores ou individualmente.
-    *   Feche outras aplicações que consomem muita memória.
-*   **Falha na Detecção (Landmark == `null`):**
-    *   **Geométrico:** A heurística pode não ter encontrado um candidato válido. Verifique a orientação da malha ou ajuste as heurísticas em `detector_geometric.py`.
-    *   **ML:** O modelo pode não ter sido treinado para esse landmark, ou a confiança da predição foi muito baixa. Verifique se o modelo `.joblib` existe e se o treinamento foi adequado.
-*   **Erro na Visualização 3D (Open3D):** Pode ocorrer em ambientes sem suporte gráfico adequado (servidores remotos, alguns containers Docker). Use `--force_2d_vis` para usar a visualização Matplotlib.
-*   **Dependências Ausentes:** Certifique-se de que todas as bibliotecas em `requirements.txt` foram instaladas corretamente no ambiente virtual ativo.
+### Erro `FileNotFoundError`
+```
+FileNotFoundError: [Errno 2] No such file or directory: 'data/skulls/arquivo.stl'
+```
+**Solução:** Verifique se os caminhos estão corretos e os arquivos existem.
 
-Se encontrar outros problemas, verifique os logs de erro detalhados (use a opção `-v` ou `--verbose` na linha de comando) para obter mais informações.
+### Erro de Memória
+```
+MemoryError: Unable to allocate array
+```
+**Soluções:**
+- Reduza `--simplify_faces` (ex: `--simplify_faces 1000`)
+- Processe arquivos individualmente
+- Feche outras aplicações que consomem memória
 
+### Falha na Detecção (Landmark == `null`)
+
+**Método Geométrico:**
+- Verifique orientação da malha (deve estar em posição anatômica)
+- Malha pode ter qualidade baixa ou geometria atípica
+
+**Método ML:**
+- Modelo pode não existir para esse landmark
+- Confiança da predição muito baixa
+- Modelo precisa ser retreinado com mais dados
+
+### Erro na Visualização 3D
+```
+RuntimeError: GLFW Error: [65544] WGL: The driver does not appear to support OpenGL
+```
+**Soluções:**
+- Use `--force_2d_vis` para forçar visualização 2D
+- Instale drivers gráficos atualizados
+- Em servidores remotos, use sempre visualização 2D
+
+### Dependências Ausentes
+```
+ModuleNotFoundError: No module named 'trimesh'
+```
+**Soluções:**
+- Certifique-se de que o ambiente virtual está ativado
+- Execute `pip install -r requirements.txt` novamente
+- Verifique se está no diretório correto do projeto
+
+## 💡 Exemplos Práticos
+
+### Exemplo 1: Processamento Básico
+```bash
+# Processar um arquivo com método geométrico
+python src/main.py single --method geometric -i data/skulls/cranio001.stl --visualize --verbose
+
+# Output esperado:
+# ✅ Landmarks detectados: 6/8 (75.0%)
+# 💾 Resultados salvos em: results/cranio001_geometric_landmarks.json
+# 🎨 Visualização salva em: results/cranio001_geometric_visualization.png
+```
+
+### Exemplo 2: Avaliação com Ground Truth
+```bash
+# Avaliar precisão com dados GT
+python src/main.py single --method ml -i cranio001.stl --gt_file data/ground_truth/cranio001_landmarks_gt.json --verbose
+
+# Output esperado:
+# 📊 Erro Médio de Detecção (MDE): 2.345 mm
+# 📋 Glabela: 1.23 mm
+# 📋 Nasion: 2.45 mm
+```
+
+### Exemplo 3: Processamento em Lote com Avaliação
+```bash
+# Processar dataset completo e gerar relatório
+python src/main.py batch --method geometric -i data/skulls/ --gt_dir data/ground_truth/ --output_dir results/evaluation_complete --visualize
+
+# Output esperado:
+# 📊 100 arquivos processados
+# 📈 Taxa de detecção geral: 78.5%
+# 📉 Erro médio geral: 3.124 mm
+# 💾 Relatório detalhado: results/evaluation_geometric_summary.csv
+```
+
+### Exemplo 4: Comparação de Métodos
+```bash
+# Processar com ambos os métodos
+python src/main.py batch --method geometric -i data/skulls/ --output_dir results/comparison
+python src/main.py batch --method ml -i data/skulls/ --output_dir results/comparison
+
+# Analisar resultados nos notebooks
+jupyter lab notebooks/03_analise_resultados.ipynb
+```
+
+## 📞 Suporte
+
+Para problemas não cobertos neste guia:
+
+1. **Verifique os Logs:** Use `--verbose` para diagnóstico detalhado
+2. **Teste com Dados Simples:** Use os notebooks com dados dummy primeiro
+3. **Verifique Dependências:** Confirme que todas as bibliotecas estão instaladas
+4. **Documentação Técnica:** Consulte o `README.md` para detalhes técnicos
+
+---
+
+**🎉 Sistema configurado e pronto para uso!**
+
+Este guia deve cobrir a maioria dos casos de uso. Para funcionalidades avançadas ou customizações, consulte o código fonte e a documentação técnica no `README.md`.

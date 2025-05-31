@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Módulo para carregar, pré-processar e simplificar malhas 3D de crânios."""
+"""Módulo para carregar, pré-processar e simplificar malhas 3D de crânios - VERSÃO ROBUSTA."""
 
 import trimesh
 import numpy as np
@@ -7,6 +7,7 @@ import os
 import hashlib
 import pickle
 import logging
+from scipy.spatial import ConvexHull
 
 class MeshProcessor:
     """Processa malhas 3D, incluindo carregamento, simplificação e cache."""
@@ -161,8 +162,180 @@ class MeshProcessor:
             logging.error(f"Erro ao carregar arquivo {filepath}: {e}")
             return None
 
+    def _install_fast_simplification(self):
+        """Tenta instalar fast_simplification se não estiver disponível."""
+        try:
+            import fast_simplification
+            return True
+        except ImportError:
+            try:
+                logging.info("Tentando instalar fast_simplification...")
+                import subprocess
+                import sys
+                subprocess.check_call([sys.executable, "-m", "pip", "install", "fast_simplification"])
+                import fast_simplification
+                logging.info("fast_simplification instalado com sucesso")
+                return True
+            except:
+                logging.warning("Não foi possível instalar fast_simplification")
+                return False
+
+    def _simplify_with_pymeshlab(self, mesh, target_faces):
+        """Simplifica usando pymeshlab com métodos corretos."""
+        try:
+            import pymeshlab
+            
+            # Criar MeshSet
+            ms = pymeshlab.MeshSet()
+            
+            # Converter trimesh para pymeshlab
+            vertices = mesh.vertices.astype(np.float64)
+            faces = mesh.faces.astype(np.int32)
+            
+            # Criar mesh pymeshlab
+            pymesh = pymeshlab.Mesh(vertices, faces)
+            ms.add_mesh(pymesh)
+            
+            # Tentar diferentes métodos de simplificação do pymeshlab
+            original_faces = len(mesh.faces)
+            
+            # Método 1: Simplificação por edge collapse (mais comum)
+            try:
+                ms.meshing_decimation_quadric_edge_collapse(targetfacenum=target_faces)
+                logging.info("Usando pymeshlab: meshing_decimation_quadric_edge_collapse")
+            except:
+                # Método 2: Clustering vertices
+                try:
+                    target_perc = target_faces / original_faces
+                    ms.meshing_decimation_clustering(threshold=pymeshlab.Percentage(target_perc * 100))
+                    logging.info("Usando pymeshlab: meshing_decimation_clustering")
+                except:
+                    # Método 3: Simplificação por sampling
+                    ms.generate_simplified_point_cloud(samplenum=min(target_faces * 3, len(vertices)))
+                    logging.info("Usando pymeshlab: generate_simplified_point_cloud")
+            
+            # Extrair malha simplificada
+            simplified_mesh_data = ms.current_mesh()
+            simplified_vertices = simplified_mesh_data.vertex_matrix()
+            simplified_faces = simplified_mesh_data.face_matrix()
+            
+            # Criar nova malha trimesh
+            simplified_mesh = trimesh.Trimesh(vertices=simplified_vertices, faces=simplified_faces)
+            
+            logging.info(f"Pymeshlab simplificação: {original_faces} → {len(simplified_faces)} faces")
+            return simplified_mesh
+            
+        except Exception as e:
+            logging.warning(f"Erro na simplificação com pymeshlab: {e}")
+            return None
+
+    def _simplify_by_vertex_clustering(self, mesh, target_faces):
+        """Simplifica agrupando vértices próximos."""
+        try:
+            from sklearn.cluster import KMeans
+            
+            # Calcular número de clusters baseado no target_faces
+            n_clusters = min(target_faces, len(mesh.vertices) // 3)
+            
+            if n_clusters < 10:
+                logging.warning("Target_faces muito baixo para clustering")
+                return None
+            
+            # Agrupar vértices
+            kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
+            clusters = kmeans.fit_predict(mesh.vertices)
+            
+            # Criar novos vértices (centroides dos clusters)
+            new_vertices = kmeans.cluster_centers_
+            
+            # Criar faces usando Delaunay triangulation
+            from scipy.spatial import Delaunay
+            
+            # Projetar vértices para 2D para triangulação
+            from sklearn.decomposition import PCA
+            pca = PCA(n_components=2)
+            vertices_2d = pca.fit_transform(new_vertices)
+            
+            # Triangulação
+            tri = Delaunay(vertices_2d)
+            new_faces = tri.simplices
+            
+            # Filtrar faces inválidas
+            valid_faces = []
+            for face in new_faces:
+                if len(np.unique(face)) == 3:  # Face válida (3 vértices únicos)
+                    valid_faces.append(face)
+            
+            if len(valid_faces) == 0:
+                logging.warning("Nenhuma face válida gerada no clustering")
+                return None
+            
+            simplified_mesh = trimesh.Trimesh(vertices=new_vertices, faces=np.array(valid_faces))
+            
+            logging.info(f"Clustering simplificação: {len(mesh.faces)} → {len(simplified_mesh.faces)} faces")
+            return simplified_mesh
+            
+        except Exception as e:
+            logging.warning(f"Erro na simplificação por clustering: {e}")
+            return None
+
+    def _simplify_by_convex_hull_sampling(self, mesh, target_faces):
+        """Simplifica usando convex hull de uma amostra de vértices."""
+        try:
+            n_vertices = len(mesh.vertices)
+            
+            # Determinar quantos vértices amostrar
+            sample_size = min(max(target_faces * 2, 50), n_vertices)
+            
+            if sample_size >= n_vertices:
+                # Se a amostra é quase o tamanho original, usar convex hull direto
+                hull = ConvexHull(mesh.vertices)
+                simplified_mesh = trimesh.Trimesh(vertices=hull.points, faces=hull.simplices)
+            else:
+                # Amostragem estratificada para preservar forma
+                # Combinar amostragem aleatória com pontos extremos
+                
+                # Pontos extremos (bounding box)
+                bounds = mesh.bounds
+                extreme_points = []
+                for i in range(3):  # x, y, z
+                    for j in range(2):  # min, max
+                        point = bounds[j]
+                        # Encontrar vértice mais próximo
+                        distances = np.linalg.norm(mesh.vertices - point, axis=1)
+                        closest_idx = np.argmin(distances)
+                        extreme_points.append(mesh.vertices[closest_idx])
+                
+                extreme_points = np.array(extreme_points)
+                
+                # Amostragem aleatória do restante
+                remaining_sample_size = sample_size - len(extreme_points)
+                if remaining_sample_size > 0:
+                    random_indices = np.random.choice(
+                        n_vertices, 
+                        size=min(remaining_sample_size, n_vertices), 
+                        replace=False
+                    )
+                    random_points = mesh.vertices[random_indices]
+                    
+                    # Combinar pontos extremos e aleatórios
+                    sampled_vertices = np.vstack([extreme_points, random_points])
+                else:
+                    sampled_vertices = extreme_points
+                
+                # Convex hull da amostra
+                hull = ConvexHull(sampled_vertices)
+                simplified_mesh = trimesh.Trimesh(vertices=hull.points, faces=hull.simplices)
+            
+            logging.info(f"Convex hull simplificação: {len(mesh.faces)} → {len(simplified_mesh.faces)} faces")
+            return simplified_mesh
+            
+        except Exception as e:
+            logging.warning(f"Erro na simplificação por convex hull: {e}")
+            return None
+
     def simplify(self, mesh, target_faces, use_cache=True, original_filename="unknown"):
-        """Simplifica a malha para um número alvo de faces usando decimação quadrática.
+        """Simplifica a malha para um número alvo de faces usando métodos robustos.
 
         Args:
             mesh (trimesh.Trimesh): Objeto da malha a ser simplificada.
@@ -171,7 +344,7 @@ class MeshProcessor:
             original_filename (str): Nome do arquivo original para gerar chave de cache.
 
         Returns:
-            trimesh.Trimesh or None: Malha simplificada ou None se falhar.
+            trimesh.Trimesh or None: Malha simplificada ou malha original se falhar.
         """
         if not isinstance(mesh, trimesh.Trimesh):
             logging.error("Input para simplificação não é um objeto Trimesh válido.")
@@ -188,7 +361,7 @@ class MeshProcessor:
             'operation': 'simplify', 
             'target_faces': target_faces,
             'original_faces': current_faces,
-            'version': '1.0'
+            'version': '3.0'  # Nova versão robusta
         }
         cache_filepath = self._get_cache_filename(original_filename, cache_params)
 
@@ -201,44 +374,61 @@ class MeshProcessor:
         logging.info(f"Simplificando malha de {current_faces} faces para "
                     f"aproximadamente {target_faces} faces...")
         
-        try:
-            # Usar decimação quadrática que preserva melhor as características
-            simplified_mesh = mesh.simplify_quadratic_decimation(target_faces)
-            
-            if simplified_mesh is None or len(simplified_mesh.faces) == 0:
-                logging.error("Simplificação resultou em malha vazia.")
-                return None
-                
-            actual_faces = len(simplified_mesh.faces)
-            logging.info(f"Malha simplificada para {actual_faces} faces "
-                        f"({(current_faces - actual_faces) / current_faces * 100:.1f}% redução).")
-
-            # Salvar no cache se habilitado
-            if use_cache:
-                self._save_to_cache(simplified_mesh, cache_filepath)
-
-            return simplified_mesh
-            
-        except Exception as e:
-            logging.error(f"Erro durante a simplificação da malha: {e}")
-            
-            # Tentar método alternativo com menor agressividade
+        # Lista de métodos de simplificação em ordem de preferência
+        simplification_methods = [
+            ("trimesh simplify_quadric_decimation", self._try_trimesh_quadric),
+            ("pymeshlab", self._simplify_with_pymeshlab),
+            ("vertex clustering", self._simplify_by_vertex_clustering),
+            ("convex hull sampling", self._simplify_by_convex_hull_sampling)
+        ]
+        
+        simplified_mesh = None
+        
+        for method_name, method_func in simplification_methods:
             try:
-                logging.info("Tentando simplificação alternativa...")
-                # Reduzir menos agressivamente
-                conservative_target = max(target_faces, current_faces // 2)
-                simplified_mesh = mesh.simplify_quadratic_decimation(conservative_target)
+                logging.info(f"Tentando método: {method_name}")
+                simplified_mesh = method_func(mesh, target_faces)
                 
                 if simplified_mesh is not None and len(simplified_mesh.faces) > 0:
-                    logging.info(f"Simplificação alternativa bem-sucedida: {len(simplified_mesh.faces)} faces")
-                    return simplified_mesh
+                    actual_faces = len(simplified_mesh.faces)
+                    reduction_pct = (current_faces - actual_faces) / current_faces * 100
+                    logging.info(f"✅ Sucesso com {method_name}: {actual_faces} faces "
+                               f"({reduction_pct:.1f}% redução)")
                     
-            except:
-                pass
-            
-            # Se tudo falhar, retornar malha original
-            logging.warning("Todas as tentativas de simplificação falharam. Retornando malha original.")
-            return mesh
+                    # Salvar no cache se habilitado
+                    if use_cache:
+                        self._save_to_cache(simplified_mesh, cache_filepath)
+                    
+                    return simplified_mesh
+                else:
+                    logging.warning(f"❌ {method_name} resultou em malha vazia/inválida")
+                    
+            except Exception as e:
+                logging.warning(f"❌ {method_name} falhou: {e}")
+                continue
+        
+        # Se todos os métodos falharam, retornar malha original
+        logging.warning("⚠️ Todas as tentativas de simplificação falharam. Retornando malha original.")
+        return mesh
+
+    def _try_trimesh_quadric(self, mesh, target_faces):
+        """Tenta usar o método quadric do trimesh."""
+        # Instalar fast_simplification se necessário
+        if self._install_fast_simplification():
+            try:
+                # Calcular ratio de redução (valor entre 0 e 1)
+                current_faces = len(mesh.faces)
+                target_reduction = 1.0 - (target_faces / current_faces)
+                target_reduction = max(0.0, min(0.99, target_reduction))  # Limitar entre 0 e 0.99
+                
+                if hasattr(mesh, 'simplify_quadric_decimation'):
+                    return mesh.simplify_quadric_decimation(target_reduction)
+                elif hasattr(mesh, 'simplify_quadratic_decimation'):
+                    return mesh.simplify_quadratic_decimation(target_reduction)
+            except Exception as e:
+                logging.warning(f"Método quadric do trimesh falhou: {e}")
+        
+        return None
 
     def get_mesh_stats(self, mesh):
         """Retorna estatísticas básicas da malha.
@@ -266,72 +456,3 @@ class MeshProcessor:
         }
         
         return stats
-
-# Exemplo de uso
-if __name__ == '__main__':
-    import time
-    
-    # Configurar logging
-    logging.basicConfig(level=logging.INFO, 
-                       format='%(asctime)s - %(levelname)s - %(message)s')
-    
-    # Criar diretórios de teste
-    os.makedirs("data/skulls", exist_ok=True)
-    
-    # Criar arquivo STL dummy para teste
-    dummy_stl_path = "data/skulls/dummy_skull_test.stl"
-    if not os.path.exists(dummy_stl_path):
-        logging.info(f"Criando arquivo STL dummy em {dummy_stl_path}")
-        # Criar uma esfera como teste
-        mesh_dummy = trimesh.primitives.Sphere(radius=50, subdivisions=3)
-        mesh_dummy.export(dummy_stl_path)
-
-    # Testar o processador
-    processor = MeshProcessor(data_dir="./data/skulls", cache_dir="./data/cache")
-
-    # Teste de carregamento
-    logging.info("=== Teste de Carregamento ===")
-    start_time = time.time()
-    skull_mesh = processor.load_skull("dummy_skull_test.stl", use_cache=True)
-    load_time = time.time() - start_time
-
-    if skull_mesh:
-        stats = processor.get_mesh_stats(skull_mesh)
-        logging.info(f"Malha carregada em {load_time:.4f}s:")
-        for key, value in stats.items():
-            logging.info(f"  {key}: {value}")
-
-        # Teste de simplificação
-        logging.info("=== Teste de Simplificação ===")
-        target_faces = 100
-        start_time = time.time()
-        simplified_skull = processor.simplify(skull_mesh, 
-                                            target_faces=target_faces, 
-                                            use_cache=True, 
-                                            original_filename="dummy_skull_test.stl")
-        simplify_time = time.time() - start_time
-
-        if simplified_skull:
-            simplified_stats = processor.get_mesh_stats(simplified_skull)
-            logging.info(f"Malha simplificada em {simplify_time:.4f}s:")
-            for key, value in simplified_stats.items():
-                if key in ['vertices', 'faces']:
-                    logging.info(f"  {key}: {value}")
-
-        # Teste de cache (segunda chamada deve ser mais rápida)
-        logging.info("=== Teste de Cache ===")
-        start_time = time.time()
-        skull_mesh_cached = processor.load_skull("dummy_skull_test.stl", use_cache=True)
-        cache_time = time.time() - start_time
-        logging.info(f"Carregamento do cache: {cache_time:.4f}s")
-
-        start_time = time.time()
-        simplified_cached = processor.simplify(skull_mesh, 
-                                             target_faces=target_faces, 
-                                             use_cache=True, 
-                                             original_filename="dummy_skull_test.stl")
-        cache_simplify_time = time.time() - start_time
-        logging.info(f"Simplificação do cache: {cache_simplify_time:.4f}s")
-
-    else:
-        logging.error("Falha ao carregar a malha dummy.")

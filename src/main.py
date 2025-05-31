@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Script principal para executar o sistema de detecção de landmarks."""
+"""Script principal para executar o sistema de detecção de landmarks - CORREÇÃO DE CAMINHO."""
 
 import argparse
 import os
@@ -25,15 +25,28 @@ def process_single_file(args):
     """Processa um único arquivo STL."""
     logging.info(f"=== Processando arquivo único: {args.input_file} ===")
     
-    # Determinar caminho completo do arquivo
-    if os.path.isabs(args.input_file):
-        filepath = args.input_file
+    # CORREÇÃO: Determinar caminho completo do arquivo corretamente
+    input_file = args.input_file
+    
+    # Se o caminho é absoluto, usar como está
+    if os.path.isabs(input_file):
+        filepath = input_file
         data_dir = os.path.dirname(filepath)
         filename = os.path.basename(filepath)
+    # Se contém separadores de caminho, tratar como relativo ao diretório atual
+    elif os.path.sep in input_file or '/' in input_file:
+        filepath = os.path.abspath(input_file)
+        data_dir = os.path.dirname(filepath)
+        filename = os.path.basename(filepath)
+    # Se é apenas nome do arquivo, usar data_dir padrão
     else:
-        filename = args.input_file
-        data_dir = getattr(args, 'data_dir', './data/skulls')
+        filename = input_file
+        data_dir = args.data_dir
         filepath = os.path.join(data_dir, filename)
+
+    logging.info(f"Caminho resolvido: {filepath}")
+    logging.info(f"Data dir: {data_dir}")
+    logging.info(f"Filename: {filename}")
 
     if not os.path.exists(filepath):
         logging.error(f"Arquivo de entrada não encontrado: {filepath}")
@@ -315,7 +328,10 @@ def setup_argument_parser():
         epilog="""
 Exemplos de uso:
 
-  # Processar um arquivo com método geométrico
+  # Processar um arquivo com caminho relativo
+  python src/main.py single --method geometric -i cranio.stl --visualize
+
+  # Processar um arquivo com caminho completo  
   python src/main.py single --method geometric -i data/skulls/cranio.stl --visualize
 
   # Processar lote com ML e avaliação
@@ -339,9 +355,9 @@ Exemplos de uso:
                               choices=["geometric", "ml"], 
                               help="Método de detecção a ser utilizado")
     parser_single.add_argument("-i", "--input_file", type=str, required=True, 
-                              help="Caminho para o arquivo STL")
+                              help="Caminho para o arquivo STL (nome do arquivo ou caminho completo)")
     parser_single.add_argument("--data_dir", type=str, default="./data/skulls", 
-                              help="Diretório base (se input_file for apenas nome)")
+                              help="Diretório base (usado quando input_file é apenas nome)")
     parser_single.add_argument("--gt_file", type=str, 
                               help="Arquivo JSON de ground truth para avaliação")
     parser_single.add_argument("--output_dir", type=str, default="./results", 

@@ -11,16 +11,8 @@ from .landmarks import LANDMARK_NAMES
 class GeometricDetector:
     """Detecta landmarks em uma malha 3D usando propriedades geométricas."""
 
-    def __init__(self, landmark_definitions=None):
-        """Inicializa o detector geométrico.
-
-        Args:
-            landmark_definitions (dict, optional): Dicionário com definições ou
-                                                  heurísticas específicas para cada landmark.
-        """
-        self.landmark_definitions = landmark_definitions if landmark_definitions else {}
-        
-        # Mapeamento de nomes para funções de detecção específicas
+    def __init__(self):
+        # Mapear cada landmark a sua função específica de detecção
         self.detection_functions = {
             "Glabela": self._find_glabela,
             "Nasion": self._find_nasion,
@@ -31,144 +23,95 @@ class GeometricDetector:
             "Vertex": self._find_vertex,
             "Inion": self._find_inion,
         }
-        logging.info("Detector Geométrico inicializado.")
+        logging.debug("GeometricDetector inicializado com funções de detecção para cada landmark.")
 
     def _calculate_curvature(self, mesh, radius=None):
-        """Calcula a curvatura Gaussiana para cada vértice.
-
-        Args:
-            mesh (trimesh.Trimesh): Malha de entrada.
-            radius (float, optional): Raio para cálculo de curvatura local.
-
-        Returns:
-            np.ndarray: Array com a curvatura Gaussiana para cada vértice.
-        """
+        """Calcula a curvatura Gaussiana para cada vértice da malha."""
         try:
+            # Se raio não fornecido, usar 3x o comprimento médio das arestas
             if radius is None:
-                # Calcular raio baseado no tamanho médio das arestas
                 avg_edge = np.mean(mesh.edges_unique_length)
-                radius = avg_edge * 3.0  # Multiplicador conservador
-            
-            # Usar curvatura Gaussiana discreta
-            curvatures = trimesh.curvature.discrete_gaussian_curvature_measure(
-                mesh, mesh.vertices, radius=radius
-            )
-            
-            # Tratar valores NaN ou infinitos
+                radius = avg_edge * 3.0
+            curvatures = trimesh.curvature.discrete_gaussian_curvature_measure(mesh, mesh.vertices, radius=radius)
+            # Substituir NaN/inf por valores finitos (0.0, 1.0, -1.0)
             curvatures = np.nan_to_num(curvatures, nan=0.0, posinf=1.0, neginf=-1.0)
-            
-            logging.info(f"Curvatura Gaussiana calculada para {len(mesh.vertices)} vértices "
-                        f"(raio={radius:.3f})")
             return curvatures
-            
         except Exception as e:
             logging.error(f"Erro ao calcular curvatura: {e}")
-            # Retorna array de zeros se o cálculo falhar
+            # Retorna zeros se falhar cálculo de curvatura
             return np.zeros(len(mesh.vertices))
 
     def _find_extreme_vertex(self, mesh, direction_vector, region_mask=None):
-        """Encontra o vértice mais extremo em uma determinada direção.
-        
-        Args:
-            mesh: Malha 3D
-            direction_vector: Vetor direção para busca
-            region_mask: Máscara opcional para limitar região de busca
-            
-        Returns:
-            tuple: (índice, coordenadas) do vértice extremo
-        """
+        """Encontra o índice e coordenada do vértice mais extremo em uma direção dada."""
         vertices = mesh.vertices
         if region_mask is not None:
             vertices = vertices[region_mask]
             indices = np.where(region_mask)[0]
         else:
             indices = np.arange(len(vertices))
-        
+        # Produto interno dos vetores posição com o vetor de direção para achar extremo
         dots = vertices @ np.array(direction_vector)
         extreme_idx_local = np.argmax(dots)
         extreme_idx_global = indices[extreme_idx_local]
-        
         return extreme_idx_global, mesh.vertices[extreme_idx_global]
 
     def _get_midline_mask(self, mesh, tolerance_ratio=0.05):
-        """Cria máscara para vértices próximos à linha média (X ≈ 0).
-        
-        Args:
-            mesh: Malha 3D
-            tolerance_ratio: Tolerância como fração da largura total
-            
-        Returns:
-            np.ndarray: Máscara booleana para vértices na linha média
-        """
+        """Gera uma máscara booleana para vértices próximos ao plano mediano (x ~ 0)."""
         x_range = mesh.bounds[1, 0] - mesh.bounds[0, 0]
         tolerance = x_range * tolerance_ratio
         return np.abs(mesh.vertices[:, 0]) < tolerance
 
     def _find_glabela(self, mesh, kdtree, curvatures):
-        """Encontra a Glabela (ponto mais proeminente frontal)."""
+        """Encontra a Glabela: ponto frontal mais proeminente na parte superior do crânio."""
         try:
-            # Região frontal superior
             center_z = mesh.centroid[2]
             bounds = mesh.bounds
-            
-            # Máscara para região frontal superior
+            # Região frontal superior aproximada
             frontal_mask = (
-                (mesh.vertices[:, 1] > bounds[0, 1] + (bounds[1, 1] - bounds[0, 1]) * 0.7) &  # Parte frontal
-                (mesh.vertices[:, 2] > center_z) &  # Metade superior
-                (np.abs(mesh.vertices[:, 0]) < (bounds[1, 0] - bounds[0, 0]) * 0.3)  # Próximo ao centro
+                (mesh.vertices[:, 1] > bounds[0, 1] + 0.7 * (bounds[1, 1] - bounds[0, 1])) &  # parte frontal (Y alto)
+                (mesh.vertices[:, 2] > center_z) &  # metade superior em Z
+                (np.abs(mesh.vertices[:, 0]) < 0.3 * (bounds[1, 0] - bounds[0, 0]))  # próximo do plano mediano
             )
-            
             if not np.any(frontal_mask):
-                # Fallback: ponto mais frontal geral
+                # Fallback: simplesmente o vértice mais à frente (maior Y)
                 idx, point = self._find_extreme_vertex(mesh, [0, 1, 0])
-                logging.warning("Usando ponto mais frontal como Glabela (fallback)")
+                logging.warning("Glabela: usando vértice mais frontal como fallback")
                 return idx, point
-            
-            # Entre os candidatos frontais, pegar o mais à frente
+            # Dentro da região frontal, pega vértice mais projetado para frente (eixo Y)
             idx, point = self._find_extreme_vertex(mesh, [0, 1, 0], frontal_mask)
-            logging.info(f"Glabela detectada no índice: {idx}")
             return idx, point
-            
         except Exception as e:
             logging.error(f"Erro ao detectar Glabela: {e}")
             return None, None
 
     def _find_nasion(self, mesh, kdtree, curvatures):
-        """Encontra o Nasion (depressão nasal)."""
+        """Encontra o Nasion: ponto de depressão nasal (entrequeda das sobrancelhas)."""
         try:
             bounds = mesh.bounds
             center_z = mesh.centroid[2]
-            
-            # Região de interesse: linha média frontal, altura média
+            # ROI: região frontal mediana, altura média
             roi_mask = (
-                self._get_midline_mask(mesh, 0.1) &  # Linha média
-                (mesh.vertices[:, 1] > bounds[0, 1] + (bounds[1, 1] - bounds[0, 1]) * 0.6) &  # Frontal
-                (mesh.vertices[:, 2] < center_z + (bounds[1, 2] - center_z) * 0.4) &  # Altura média
-                (mesh.vertices[:, 2] > bounds[0, 2] + (bounds[1, 2] - bounds[0, 2]) * 0.3)   # Acima da base
+                self._get_midline_mask(mesh, 0.1) &
+                (mesh.vertices[:, 1] > bounds[0, 1] + 0.6 * (bounds[1, 1] - bounds[0, 1])) &
+                (mesh.vertices[:, 2] < center_z + 0.4 * (bounds[1, 2] - center_z)) &
+                (mesh.vertices[:, 2] > bounds[0, 2] + 0.3 * (bounds[1, 2] - bounds[0, 2]))
             )
-            
             if not np.any(roi_mask):
-                logging.warning("ROI do Nasion vazia, usando heurística alternativa")
-                # Alternativa: ponto de menor curvatura na região frontal
-                frontal_mask = mesh.vertices[:, 1] > bounds[0, 1] + (bounds[1, 1] - bounds[0, 1]) * 0.7
+                logging.warning("Nasion: ROI vazia, usando fallback de curvatura mínima na face frontal")
+                frontal_mask = mesh.vertices[:, 1] > bounds[0, 1] + 0.7 * (bounds[1, 1] - bounds[0, 1])
                 if np.any(frontal_mask):
-                    roi_curvatures = curvatures[frontal_mask]
+                    roi_curv = curvatures[frontal_mask]
                     roi_indices = np.where(frontal_mask)[0]
-                    min_idx = np.argmin(roi_curvatures)
-                    nasion_idx = roi_indices[min_idx]
-                    return nasion_idx, mesh.vertices[nasion_idx]
+                    min_idx_local = np.argmin(roi_curv)
+                    min_idx = roi_indices[min_idx_local]
+                    return min_idx, mesh.vertices[min_idx]
                 else:
                     return None, None
-            
-            # Encontrar ponto de menor curvatura (mais côncavo) na ROI
-            roi_curvatures = curvatures[roi_mask]
+            # Dentro da ROI, escolhe vértice de menor coordenada Z (mais baixo na testa)
             roi_indices = np.where(roi_mask)[0]
-            nasion_idx_local = np.argmin(roi_curvatures)
-            nasion_idx_global = roi_indices[nasion_idx_local]
-            
-            logging.info(f"Nasion detectado no índice: {nasion_idx_global}")
-            return nasion_idx_global, mesh.vertices[nasion_idx_global]
-            
+            min_z_idx_local = np.argmin(mesh.vertices[roi_indices, 2])
+            min_idx = roi_indices[min_z_idx_local]
+            return min_idx, mesh.vertices[min_idx]
         except Exception as e:
             logging.error(f"Erro ao detectar Nasion: {e}")
             return None, None
@@ -298,113 +241,43 @@ class GeometricDetector:
             return None, None
 
     def detect(self, mesh):
-        """Detecta todos os landmarks definidos na malha fornecida.
-
-        Args:
-            mesh (trimesh.Trimesh): Malha pré-processada.
-
-        Returns:
-            dict: Dicionário mapeando nomes de landmarks para suas coordenadas [x, y, z],
-                  ou None se a detecção falhar.
-        """
+        """Detecta todos os landmarks definidos em uma malha pré-processada."""
         if not isinstance(mesh, trimesh.Trimesh):
-            logging.error("Input para detecção não é um objeto Trimesh válido.")
+            logging.error("Entrada inválida para detecção geométrica (esperado Trimesh).")
             return None
-
         if len(mesh.vertices) == 0 or len(mesh.faces) == 0:
-            logging.error("Malha vazia fornecida para detecção.")
+            logging.error("Malha vazia fornecida ao detector geométrico.")
             return None
-
-        logging.info(f"Iniciando detecção geométrica em malha com {len(mesh.vertices)} vértices.")
+        logging.info(f"Iniciando detecção geométrica - malha com {len(mesh.vertices)} vértices.")
         landmarks_found = {}
-
-        # Pré-computar informações úteis
+        # Pré-calcular KDTree e curvatura para uso nos algoritmos
+        kdtree = None
         try:
             kdtree = KDTree(mesh.vertices)
-            logging.debug("KDTree construída para consultas espaciais.")
         except Exception as e:
-            logging.error(f"Erro ao construir KDTree: {e}")
-            kdtree = None
-
-        # Calcular curvatura
+            logging.warning(f"Não foi possível construir KDTree: {e}")
         curvatures = self._calculate_curvature(mesh)
-
-        # Detectar cada landmark
-        for landmark_name in LANDMARK_NAMES:
-            detection_func = self.detection_functions.get(landmark_name)
-            if detection_func:
+        # Detectar cada landmark usando sua função respectiva
+        for name in LANDMARK_NAMES:
+            func = self.detection_functions.get(name)
+            if func:
                 try:
-                    index, point = detection_func(mesh, kdtree, curvatures)
+                    idx, point = func(mesh, kdtree, curvatures)
                     if point is not None:
-                        landmarks_found[landmark_name] = point.tolist()
-                        logging.debug(f"{landmark_name} detectado: {point}")
+                        landmarks_found[name] = point.tolist()
+                        logging.debug(f"{name} detectado no vértice {idx}")
                     else:
-                        landmarks_found[landmark_name] = None
-                        logging.warning(f"Falha ao detectar {landmark_name}")
-                        
+                        landmarks_found[name] = None
+                        logging.warning(f"{name} não pôde ser detectado.")
                 except Exception as e:
-                    landmarks_found[landmark_name] = None
-                    logging.error(f"Erro ao detectar {landmark_name}: {e}")
+                    landmarks_found[name] = None
+                    logging.error(f"Erro ao detectar {name}: {e}")
             else:
-                landmarks_found[landmark_name] = None
-                logging.warning(f"Função de detecção não implementada para: {landmark_name}")
-
-        # Estatísticas finais
-        detected_count = sum(1 for coords in landmarks_found.values() if coords is not None)
-        total_count = len(landmarks_found)
-        logging.info(f"Detecção geométrica concluída: {detected_count}/{total_count} landmarks detectados")
-
+                # Caso improvável: função não implementada
+                landmarks_found[name] = None
+                logging.error(f"Landmark '{name}' sem função de detecção implementada!")
+        # Log de resumo
+        detected = sum(1 for coords in landmarks_found.values() if coords is not None)
+        logging.info(f"Detecção geométrica finalizada: {detected}/{len(LANDMARK_NAMES)} detectados.")
         return landmarks_found
-
-# Exemplo de uso e teste
-if __name__ == '__main__':
-    import os
-    import sys
     
-    # Adicionar path para imports
-    sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    
-    from mesh_processor import MeshProcessor
-    
-    # Configurar logging
-    logging.basicConfig(level=logging.INFO, 
-                       format='%(asctime)s - %(levelname)s - %(message)s')
-    
-    # Criar diretórios de teste
-    os.makedirs("data/skulls", exist_ok=True)
-    
-    dummy_stl_path = "data/skulls/dummy_skull_geom.stl"
-    if not os.path.exists(dummy_stl_path):
-        logging.info(f"Criando arquivo STL dummy em {dummy_stl_path}")
-        # Usar esfera com subdivisões para ter geometria interessante
-        mesh_dummy = trimesh.primitives.Sphere(radius=50, subdivisions=3)
-        mesh_dummy.vertices += [0, 0, 50]  # Deslocar para cima
-        mesh_dummy.export(dummy_stl_path)
-
-    # Testar detecção
-    processor = MeshProcessor(data_dir="./data/skulls", cache_dir="./data/cache")
-    skull_mesh = processor.load_skull("dummy_skull_geom.stl")
-
-    if skull_mesh:
-        # Simplificar para acelerar
-        simplified_skull = processor.simplify(skull_mesh, target_faces=1000, 
-                                            original_filename="dummy_skull_geom.stl")
-
-        if simplified_skull:
-            logging.info("=== Iniciando Detecção Geométrica ===")
-            detector = GeometricDetector()
-            detected_landmarks = detector.detect(simplified_skull)
-
-            print("\n=== Landmarks Detectados (Geométrico) ===")
-            if detected_landmarks:
-                for name, coords in detected_landmarks.items():
-                    if coords:
-                        print(f"  {name}: [{coords[0]:.2f}, {coords[1]:.2f}, {coords[2]:.2f}]")
-                    else:
-                        print(f"  {name}: Não detectado")
-            else:
-                print("Falha geral na detecção.")
-        else:
-            logging.error("Falha ao simplificar a malha dummy.")
-    else:
-        logging.error("Falha ao carregar a malha dummy.")
